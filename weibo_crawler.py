@@ -90,33 +90,42 @@ def write_csv(_fname, _data):
         file_writer.writerows(_data)
     return 0
 
-def get_data_from_hot(_data_list):
-    _head = ['created_at', 'post_id', 'user_id', 'username', 'text_raw', 'reposts_count', 'comments_count', 'attitudes_count']
-    _final_data = []
-    _final_data.append(_head)
+def update_data_from_hot(_data_storage, _data_list):
     for tweet_info in _data_list:
         # собираем данные из твитов в один список
-        _final_data.append([tweet_info['created_at'], tweet_info['id'], tweet_info['user']['id'], tweet_info['user']['screen_name'], tweet_info['text_raw'], tweet_info['reposts_count'], tweet_info['comments_count'], tweet_info['attitudes_count']])
-    return _final_data
+        _data_storage.append([tweet_info['created_at'], tweet_info['id'], tweet_info['user']['id'], tweet_info['user']['screen_name'], tweet_info['text_raw'], tweet_info['reposts_count'], tweet_info['comments_count'], tweet_info['attitudes_count']])
+    return 0, _data_storage
 
-def parse_hotline(_sess_object, _hotline_id):
-    url_hotline = f'https://weibo.com/ajax/feed/hottimeline?since_id=0&refresh=0&group_id=102803&containerid=102803&extparam=discover|new_feed&max_id={_hotline_id}&count=10'
-    state2_resp1 = _sess_object.get(url_hotline)
-    if state2_resp1.status_code != 200:
-        print('bad request')
-        return 1
-    resp_data = state2_resp1.text
+def get_json_data_from_hotline(_sess_object, _url):
+    print(_url)
+    resp = _sess_object.get(_url)
+    if resp.status_code != 200:
+        msg = 'status code != 200'
+        return 1, msg
+    resp_data = resp.text
     json_data = json.loads(resp_data)
     if json_data.get('ok') != 1:
-        print('json data not ok')
-        return 1
-    _pre_data_csv = get_data_from_hot(json_data['statuses'])
-    _file_name = 'weibo_tweet_info.csv'
-    err = write_csv(_file_name, _pre_data_csv)
-    if err:
-        print(f'{_file_name} not writed')
-        return err
-    print(f'{_file_name} has been writed')
+        msg = 'json data not ok'
+        return 1, msg
+    return 0, json_data
+
+def parse_hotline(_sess_object, _num_hl_update):
+    _max_id = 0
+    _head = ['created_at', 'post_id', 'user_id', 'username', 'text_raw', 'reposts_count', 'comments_count', 'attitudes_count']
+    _final_data_storage = []
+    _final_data_storage.append(_head)
+    for _ in range(_num_hl_update):
+        update_hl_url = lambda: f'https://weibo.com/ajax/feed/hottimeline?refresh=2&group_id=102803&containerid=102803&extparam=discover|new_feed&max_id={_max_id}&count=10' if _max_id else f'https://weibo.com/ajax/feed/hottimeline?since_id=0&refresh=0&group_id=102803&containerid=102803&extparam=discover|new_feed&max_id={_max_id}&count=10'
+        err, json_data = get_json_data_from_hotline(_sess_object, update_hl_url())
+        if err:
+            print(json_data)
+            return 1, json_data
+        _max_id = json_data.get('max_id')
+        err, _final_data_storage = update_data_from_hot(_final_data_storage, json_data['statuses'])
+        if err:
+            print(_final_data_storage)
+            return 1, _final_data_storage
+    return 0, _final_data_storage
 
 def get_data_from_comments(_data_list):
     # keys:
@@ -163,9 +172,15 @@ def parse_comment(_sess_object, _post_id, _user_id):
 def main():
     _sess_obj = get_session()
     _sess_obj = make_auth(_sess_obj)
-    # hotline id for iteration in post_list
-    _hotline_id = 0
-    err = parse_hotline(_sess_obj, _hotline_id)
+    # num hotline updates
+    _num_hl_update = 3
+    err, _csv_data = parse_hotline(_sess_obj, _num_hl_update)
+    _file_name = 'weibo_tweet_info.csv'
+    err = write_csv(_file_name, _csv_data)
+    if err:
+        print(f'{_file_name} not writed')
+        return err
+    print(f'{_file_name} has been writed')
 
 
 if __name__ == '__main__':
