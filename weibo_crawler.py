@@ -1,6 +1,10 @@
 import requests, random, json, csv
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
+import asyncio
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import argparse
+import time
 
 
 def get_session():
@@ -230,8 +234,8 @@ def parse_coms(_sess_object, _posts_list):
         return 1, err_msg
     return 0, 'ok'
 
-
-def main():
+async def daily_task(_args):
+    print(f'{_args} started...')
     _sess_obj = get_session()
     _sess_obj = make_auth(_sess_obj)
     # num hotline updates
@@ -244,7 +248,33 @@ def main():
     if err:
         print(_resp)
         return err
+    print(f'{_args} has done')
     return 0
 
+async def main(args=[3, 30]):
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(daily_task, 'cron', hour=args[0], minute=args[1], args=['weibo daily'])
+    scheduler.start()
+
+    while True:
+        await asyncio.sleep(12)
+
+def show_help():
+    print("Пример использования:\npython weibo_crawler.py -t 14 30\nАргументы:\n-t, --time: Указывает время в формате часы и минуты")
+
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='установка таймера для скрипта')
+    # Добавить флаг -t, который требует два аргумента (часы и минуты)
+    parser.add_argument('-t', '--time', nargs=2, type=int, help='Флаг, требующий указание времени в формате часы и минуты', metavar=('часы', 'минуты'))
+    parser.add_argument('-q', '--qqhelp', help='описание скрипта')
+    args = parser.parse_args()
+
+    if args.qqhelp:
+        show_help()
+    if args.time:
+        # Если флаг -t указан, вызвать функцию function2 с аргументами (часы и минуты)
+        asyncio.run(main(args.time))
+    else:
+        local_time = time.localtime()
+        print(f'The program will be started: {local_time.tm_hour}:{local_time.tm_min + 1}')
+        asyncio.run(main((local_time.tm_hour, local_time.tm_min + 1)))
