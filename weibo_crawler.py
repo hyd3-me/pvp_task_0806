@@ -88,6 +88,7 @@ def write_csv(_fname, _data):
     with open(_fname, 'w') as _file:
         file_writer = csv.writer(_file, delimiter = "\t")
         file_writer.writerows(_data)
+    print(f'{_fname} has been writed')
     return 0
 
 def update_data_from_hot(_data_storage, _data_list):
@@ -97,7 +98,6 @@ def update_data_from_hot(_data_storage, _data_list):
     return 0, _data_storage
 
 def get_json_data_from_hotline(_sess_object, _url):
-    print(_url)
     resp = _sess_object.get(_url)
     if resp.status_code != 200:
         msg = 'status code != 200'
@@ -125,63 +125,126 @@ def parse_hotline(_sess_object, _num_hl_update):
         if err:
             print(_final_data_storage)
             return 1, _final_data_storage
+    _file_name = 'weibo_tweet_info.csv'
+    err = write_csv(_file_name, _final_data_storage)
     return 0, _final_data_storage
 
-def get_data_from_comments(_data_list):
-    # keys:
-    # created_at
-    # id
-    # rootid
-    # text
-    # user
-    # like_counts
-    pass
-
-def parse_comment(_sess_object, _post_id, _user_id):
+def check_allow_coms(_sess_object, _post_id):
     # is allow coms?
-    check_url = f'https://weibo.com/ajax/statuses/checkAllowCommentWithPic?id={_post_id}'
-    resp_allow_comm = _sess_object.get(check_comm)
-    # resp: b'{"result":true,"ok":1}'
+    check_comm_url = f'https://weibo.com/ajax/statuses/checkAllowCommentWithPic?id={_post_id}'
+    resp_allow_comm = _sess_object.get(check_comm_url)
+    status = resp_allow_comm.json().get('ok', '')
+    if not status:
+        return 1, f'comments not allowed'
+    return 0, resp_allow_comm.json().get('result', '')
 
-    _all_coms = []
+def get_json_data_from_coms(resp_obj):
+    comm_text = resp_obj.text
+    comm_json_data = json.loads(comm_text)
+    return 0, comm_json_data
 
-    # head coms
+def get_head_comms(_sess_object, _post_id, _user_id):
     first_comm_url = f'https://weibo.com/ajax/statuses/buildComments?is_reload=1&id={_post_id}&is_show_bulletin=2&is_mix=0&count=20&type=feed&uid={_user_id}&fetch_level=0&locale=en-US'
-    first_comm_resp = _sess_object.get(first_comm_url)
-    first_comm_text = first_comm_resp.text
-    first_comm_json_data = json.loads(first_comm_text)
-    # json_data keys:
-    # ok # 1 is ok
-    # filter_group
-    # data # coms list
-    # rootComment
-    # total_number # coms num
-    # max_id # id for fetch next coms
-    # trendsText
+    head_comm_resp = _sess_object.get(first_comm_url)
+    if head_comm_resp.status_code != 200:
+        msg = 'head_comm status code != 200'
+        return 1, msg
+    err, json_data_from_coms = get_json_data_from_coms(head_comm_resp)
+    if err:
+        return 1, f'error in extract data from resp'
+    return 0, json_data_from_coms
 
-    #get_data_from_comments(first_comm_json_data['data'])
+def update_list_coms(_storage, _data_list):
+    for comm in _data_list:
+        _storage.append([comm['created_at'], comm['id'], comm['user']['id'], comm['user']['screen_name'], comm['text_raw'], comm['like_counts'], comm['rootid']])
+        _nested_coms = comm.get('comments')
+        if _nested_coms:
+            err, _storage = update_list_coms(_storage, _nested_coms)
+    return 0, _storage
 
-    # more coms
-    c2_url = f'https://weibo.com/ajax/statuses/buildComments?flow=0&is_reload=1&id={_post_id}&is_show_bulletin=2&is_mix=0&count=10&uid={_u_id}&fetch_level=0&locale=en-US'
+def get_f1_comm(_sess_object, _post_id, _user_id):
+    next_url = f'https://weibo.com/ajax/statuses/buildComments?flow=0&is_reload=1&id={_post_id}&is_show_bulletin=2&is_mix=0&count=10&uid={_user_id}&fetch_level=0&locale=en-US'
+    resp = _sess_object.get(next_url)
+    if resp.status_code != 200:
+        msg = 'next_comm status code != 200'
+        return 1, msg
+    err, json_data_from_coms = get_json_data_from_coms(resp)
+    if err:
+        return 1, f'error in extract data from resp'
+    return 0, json_data_from_coms
 
+def get_next_com(_sess_object, _post_id, _user_id, _max_id):
+    next_com_url = f'https://weibo.com/ajax/statuses/buildComments?flow=0&is_reload=1&id={_post_id}&is_show_bulletin=2&is_mix=0&max_id={_max_id}&count=20&uid={_user_id}&fetch_level=0&locale=en-US'
+    resp = _sess_object.get(next_com_url)
+    if resp.status_code != 200:
+        msg = 'next_comm status code != 200'
+        return 1, msg
+    err, json_data_from_coms = get_json_data_from_coms(resp)
+    if err:
+        return 1, f'error in extract data from resp'
+    return 0, json_data_from_coms
 
-    # next coms with max_id
-    c3_url = f'https://weibo.com/ajax/statuses/buildComments?flow=0&is_reload=1&id={_post_id}&is_show_bulletin=2&is_mix=0&max_id={_max_id}&count=20&uid={_u_id}&fetch_level=0&locale=en-US'
-    pass
+def get_comms_list_from_tweet(_sess_object, _post_id, _user_id):
+    _pre_data = []
+    err, _resp = check_allow_coms(_sess_object, _post_id)
+    if err:
+        return 1, _resp
+    err, _json_data = get_head_comms(_sess_object, _post_id, _user_id)
+    if err:
+        return 1, _json_data
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    err, _json_data = get_f1_comm(_sess_object, _post_id, _user_id)
+    if err:
+        return 1, _json_data
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    _max_id = _json_data.get('max_id')
+    # get next1
+    err, _json_data = get_next_com(_sess_object, _post_id, _user_id, _max_id)
+    if err:
+        return 1, _json_data
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    _max_id = _json_data.get('max_id')
+    # get next2
+    err, _json_data = get_next_com(_sess_object, _post_id, _user_id, _max_id)
+    if err:
+        return 1, _json_data
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    _max_id = _json_data.get('max_id')
+    #while max_id comments is allow
+    return 0, _pre_data
+
+def parse_coms(_sess_object, _posts_list):
+    _head = ['created_at', 'id', 'userid', 'username', 'text_raw', 'like_counts', 'rootid']
+    _comms_list = []
+    _comms_list.append(_head)
+    for post in _posts_list[1:]:
+        err, _new_comms_list = get_comms_list_from_tweet(_sess_object, post[1], post[2])
+        if err:
+            return 1, _new_comms_list
+        for _comm in _new_comms_list:
+            _comms_list.append(_comm)
+    _file_name = 'weibo_comments.csv'
+    err = write_csv(_file_name, _comms_list)
+    if err:
+        err_msg = f'{_file_name} not writed'
+        return 1, err_msg
+    return 0, 'ok'
+
 
 def main():
     _sess_obj = get_session()
     _sess_obj = make_auth(_sess_obj)
     # num hotline updates
-    _num_hl_update = 3
-    err, _csv_data = parse_hotline(_sess_obj, _num_hl_update)
-    _file_name = 'weibo_tweet_info.csv'
-    err = write_csv(_file_name, _csv_data)
+    _num_hl_update = 10
+    err, _resp = parse_hotline(_sess_obj, _num_hl_update)
     if err:
-        print(f'{_file_name} not writed')
+        print(f'{_resp}')
         return err
-    print(f'{_file_name} has been writed')
-
+    err, _resp = parse_coms(_sess_obj, _resp)
+    if err:
+        print(_resp)
+        return err
+    return 0
 
 if __name__ == '__main__':
     main()
