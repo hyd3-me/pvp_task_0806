@@ -5,7 +5,7 @@ demo
 ```sh
 $ python weibo_crawler.py
 ```
-- без аргументов запустит скрипт через одну минуту
+- запуск скрипта один раз
 ```sh
 $ python weibo_crawler.py --qqhelp
 ```
@@ -43,6 +43,7 @@ $ python weibo_crawler.py -t 01 12
 
 ## комментарии записываются в weibo_comments.csv файл с такими заголовками:
 - created_at
+- post_id
 - id #comments_id
 - userid
 - username

@@ -158,12 +158,12 @@ def get_head_comms(_sess_object, _post_id, _user_id):
         return 1, f'error in extract data from resp'
     return 0, json_data_from_coms
 
-def update_list_coms(_storage, _data_list):
+def update_list_coms(_storage, _data_list, _post_id):
     for comm in _data_list:
-        _storage.append([comm['created_at'], comm['id'], comm['user']['id'], comm['user']['screen_name'], comm['text_raw'], comm['like_counts'], comm['rootid']])
+        _storage.append([comm['created_at'], _post_id, comm['id'], comm['user']['id'], comm['user']['screen_name'], comm['text_raw'], comm['like_counts'], comm['rootid']])
         _nested_coms = comm.get('comments')
         if _nested_coms:
-            err, _storage = update_list_coms(_storage, _nested_coms)
+            err, _storage = update_list_coms(_storage, _nested_coms, _post_id)
     return 0, _storage
 
 def get_f1_comm(_sess_object, _post_id, _user_id):
@@ -196,23 +196,23 @@ def get_comms_list_from_tweet(_sess_object, _post_id, _user_id):
     err, _json_data = get_head_comms(_sess_object, _post_id, _user_id)
     if err:
         return 1, _json_data
-    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'), _post_id)
     err, _json_data = get_f1_comm(_sess_object, _post_id, _user_id)
     if err:
         return 1, _json_data
-    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'), _post_id)
     _max_id = _json_data.get('max_id')
     # get next1
     err, _json_data = get_next_com(_sess_object, _post_id, _user_id, _max_id)
     if err:
         return 1, _json_data
-    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'), _post_id)
     _max_id = _json_data.get('max_id')
     # get next2
     err, _json_data = get_next_com(_sess_object, _post_id, _user_id, _max_id)
     if err:
         return 1, _json_data
-    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'))
+    err, _pre_data = update_list_coms(_pre_data, _json_data.get('data'), _post_id)
     _max_id = _json_data.get('max_id')
     #while max_id comments is allow
     return 0, _pre_data
@@ -275,6 +275,4 @@ if __name__ == '__main__':
         # Если флаг -t указан, вызвать функцию function2 с аргументами (часы и минуты)
         asyncio.run(main(args.time))
     else:
-        local_time = time.localtime()
-        print(f'The program will be started: {local_time.tm_hour}:{local_time.tm_min + 1}')
-        asyncio.run(main((local_time.tm_hour, local_time.tm_min + 1)))
+        asyncio.run(daily_task(f'weibo once'))
